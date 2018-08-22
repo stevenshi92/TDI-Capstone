@@ -1,0 +1,134 @@
+---
+title: "capstone project"
+author: "Hanjie Shi"
+date: "8/8/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(readxl)
+library(data.table)
+library(nlme)
+library(randomForest)
+library(MASS)
+library(glmnet)
+library(corrplot)
+```
+#Objective:
+This project using vairous machine learning and regression techniques to analyze the relationship between rank/scores of a company with respect to different predictors. Also I have combine the stock return data to the datasets to find out top factors could influence the stock price. It could provide as an outlook to the company to improve performance in the future.
+
+For the specfic machine learning techniques, I have used randomforest models since it reduces variance comparing to the simple tree models and I used the variable importance algorithm (at each split, you can calculate how much this split reduces node impurity. For regression trees, indeed, the difference between RSS before and after the split. This is summed over all splits for that variable, over all trees). Besides, random forest could resolve 'small n big p' problems.
+
+When I fit the full data and I want to do variable selection, Lasso regression and stepwise algo are two good ways to reduce variables. Lasso regression add the penalty terms comparing to the classis linear models. In addition, I have used cross validation to find the optimal lambda values to fit the model. The stepwise regression find out the variable with lowest AIC.
+```{r}
+price<-read.csv('price.csv')
+colnames(price)[1]<-"Date"
+odd_indexes<-seq(1,nrow(price),2)
+price<-price[odd_indexes,]
+rownames(price) <- price[,1]
+logprice<-log(price[,2:ncol(price)])
+lret<-apply(logprice,2,diff)
+ret_mean<-as.data.frame(apply(lret,2,mean))
+colnames(ret_mean)[1]<-"mean"
+ret_mean <- cbind(ticker = rownames(ret_mean), ret_mean)
+rownames(ret_mean) <- 1:nrow(ret_mean)
+
+stock_data<-read.csv('jc_companies.csv')
+alldata<-merge(stock_data,ret_mean,by='ticker')
+alldata<-as.data.table(alldata)     
+alldata<-na.omit(alldata)  
+hist(alldata$scores.comm.overall)
+hist(alldata$scores.cust.overall)
+hist(alldata$scores.env.overall)
+hist(alldata$scores.jobs.overall)
+hist(alldata$scores.mgmt.overall)
+hist(alldata$scores.prod.overall)
+hist(alldata$scores.worker.overall)
+```
+
+#Average Score by Industry
+```{r}
+summary.function <- function(data, byvar=NULL,ordervar="Average_Score") {
+  out<-data[,list(Average_Score=mean(scores.overall,na.rm=TRUE),
+                  Variance_Score=var(scores.overall,na.rm=TRUE),
+                  Total_Companies=.N),by=byvar]
+  setorderv(out, ordervar)
+  return(out)
+}
+
+summary.function(alldata,byvar="rank.industry")
+
+
+```
+#Correlation Matrix of Stock price with scores
+```{r}
+#cor(alldata$scores.worker.overall,alldata$mean,use="complete.obs")
+#cor(alldata[,6:52],alldata$mean,use="complete.obs")
+res<-cor(alldata[,c(7:13,53)])
+corrplot(res, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45)
+plot(alldata$scores.worker.overall,alldata$mean)##The Correlation seems weak with respect to mean
+
+```
+
+#Random Forest By Industry (Response as overall score)
+```{r,warning=FALSE}
+rflist<-lapply(split(alldata,alldata$rank.industry),function(d) randomForest(scores.overall~.,d[,c(6,14:52)],importance = TRUE))
+
+#varimp<-varImpPlot(rflist$`1`)
+#varImpPlot(rflist$)
+#rownames(varimp1)[apply(varimp1, 2, which.max)]
+#rownames(varimp1)[order(varimp1, decreasing=TRUE)][1:3]
+varimp<-function(fit){
+  plot<-as.data.frame(importance(fit))
+  return(rownames(plot)[order(plot$IncNodePurity, decreasing=TRUE)][1:3])
+}
+#names(rflist)<-c(1:32)
+temp<- c(varimp(rflist$`1`),varimp(rflist$`2`),varimp(rflist$`3`),varimp(rflist$`4`),varimp(rflist$`5`),varimp(rflist$`6`),varimp(rflist$`7`),varimp(rflist$`8`),varimp(rflist$`9`),varimp(rflist$`10`),varimp(rflist$`11`),varimp(rflist$`12`),varimp(rflist$`13`),varimp(rflist$`14`),varimp(rflist$`15`),varimp(rflist$`16`),varimp(rflist$`17`),varimp(rflist$`18`),varimp(rflist$`19`),varimp(rflist$`20`),varimp(rflist$`21`),varimp(rflist$`22`),varimp(rflist$`23`),varimp(rflist$`24`),varimp(rflist$`25`),varimp(rflist$`26`),varimp(rflist$`27`),varimp(rflist$`28`),varimp(rflist$`29`),varimp(rflist$`30`),varimp(rflist$`31`),varimp(rflist$`32`)
+         ,varimp(rflist$`33`),varimp(rflist$`34`))
+temp<-as.data.frame(temp)
+summary(temp$temp)
+
+```
+#Random Forest By Industry (Response as stock mean)
+```{r,warning=FALSE}
+rflist<-lapply(split(alldata,alldata$rank.industry),function(d) randomForest(mean~.,d[,c(14:53)],importance = TRUE))
+
+#varimp<-varImpPlot(rflist$`1`)
+#varImpPlot(rflist$)
+#rownames(varimp1)[apply(varimp1, 2, which.max)]
+#rownames(varimp1)[order(varimp1, decreasing=TRUE)][1:3]
+varimp<-function(fit){
+  plot<-as.data.frame(importance(fit))
+  return(rownames(plot)[order(plot$IncNodePurity, decreasing=TRUE)][1:3])
+}
+#names(rflist)<-c(1:32)
+temp<- c(varimp(rflist$`1`),varimp(rflist$`2`),varimp(rflist$`3`),varimp(rflist$`4`),varimp(rflist$`5`),varimp(rflist$`6`),varimp(rflist$`7`),varimp(rflist$`8`),varimp(rflist$`9`),varimp(rflist$`10`),varimp(rflist$`11`),varimp(rflist$`12`),varimp(rflist$`13`),varimp(rflist$`14`),varimp(rflist$`15`),varimp(rflist$`16`),varimp(rflist$`17`),varimp(rflist$`18`),varimp(rflist$`19`),varimp(rflist$`20`),varimp(rflist$`21`),varimp(rflist$`22`),varimp(rflist$`23`),varimp(rflist$`24`),varimp(rflist$`25`),varimp(rflist$`26`),varimp(rflist$`27`),varimp(rflist$`28`),varimp(rflist$`29`),varimp(rflist$`30`),varimp(rflist$`31`),varimp(rflist$`32`)       ,varimp(rflist$`33`),varimp(rflist$`34`))
+temp<-as.data.frame(temp)
+summary(temp$temp)
+```
+#Full Data
+```{r}
+data_noind<-alldata[,6:53]
+lmfit_main_feature<-lm(mean~.,data_noind[,c(2:8,48)])
+summary(lmfit_main_feature)
+par( mfrow = c( 2, 2 ) )
+plot(lmfit_main_feature)
+step_lm<-stepAIC(lmfit_main_feature,direction = "both",trace = FALSE)
+summary(step_lm)
+
+lmfit_sub_feature<-lm(mean~.,data_noind[,c(9:48)])
+summary(lmfit_sub_feature)
+step_lm<-stepAIC(lmfit_sub_feature,direction = "both",trace=FALSE)
+summary(step_lm)
+```
+#Lasso
+```{r}
+cvglmout <- cv.glmnet(as.matrix(data_noind[,9:47]), as.matrix(data_noind[,48]),alpha=0.5)
+par( mfrow = c( 1, 1 ) )
+plot(cvglmout)
+optlambda=cvglmout$lambda.1se
+lassofit=glmnet(as.matrix(data_noind[,9:47]), as.matrix(data_noind[,48]),alpha = 0.5,lambda = optlambda)
+lassofit$beta
+
+```
